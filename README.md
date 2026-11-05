@@ -18,6 +18,29 @@
 
 然后打开 http://127.0.0.1:8765/ 。手机同一 Wi-Fi 下可用电脑局域网 IP 访问，但这只是测试；真正“电脑关机也能用”需要部署到云端。
 
+## PDF 导入
+
+入口：生词本页 → **PDF 导入**，或设置页 → PDF 导入。
+
+1. 选文字版 PDF（≤50MB，最多处理前 200 页）。
+2. 自动提取英文单词，按词形还原合并（sustained → sustain），统计出现次数。
+3. 默认只选“新词”；可切换大纲/扩展/已在生词本/未收录，可搜索。
+4. 点“加入生词本”。已在生词本里的词会跳过，保留原记忆曲线进度。
+5. 导入后，这些词会参与之后的每日范文选词。
+
+限制：只支持**文字版 PDF**；扫描件/图片 PDF 没有文字层，需要 OCR，当前不做。未收录词只展示，不写入生词本。PDF 不会上传服务器。
+
+## 手机安装（PWA）
+
+这是**可安装网页（PWA）**，不是应用商店 App，所以没有“下载安装包”按钮。
+
+- **iPhone / iPad**：用 **Safari** 打开 → 底部分享 → **添加到主屏幕**。
+- **Android**：用 Chrome/Edge 打开 → 右上角菜单 → **安装应用 / 添加到主屏幕**。
+- **微信**：微信内置浏览器不能安装；点右上角 … → **在浏览器打开**，再按上面操作。
+- 安装后有桌面图标、全屏打开、离线可用；数据和未安装时是同一份。
+
+应用内：设置页 → 安装到手机，会按当前设备显示对应步骤。
+
 ## 部署到 GitHub Pages（免费，推荐）
 
 1. 新建一个 GitHub 仓库（public 或 private 均可；private 的 Pages 需要 GitHub Pro）。
@@ -78,6 +101,7 @@
 | 义项、词源、助记 | [JTKING27/kaoyan-vocab-context](https://github.com/JTKING27/kaoyan-vocab-context) | 代码 MIT；词卡数据 CC BY-SA 4.0 |
 | 作文语料、模板、范文 | [IKTNF/kaoyan-english-writing-corpus](https://github.com/IKTNF/kaoyan-english-writing-corpus) | MIT |
 | 全科词频、扩展词、变形 | [xiangjiawei1234-prog/kaoyan-vocab](https://github.com/xiangjiawei1234-prog/kaoyan-vocab) | MIT |
+| PDF 文字提取 | [PDF.js](https://github.com/mozilla/pdf.js) | Apache-2.0 |
 
 - 词卡数据来自 open-dictionary / 维基词典衍生数据，按 **CC BY-SA 4.0** 使用；如需再分发，请保留署名并以相同许可共享数据。
 - 真题原文不随应用分发；考频是统计事实，例句来自 IKTNF 的原创语料。
@@ -98,7 +122,8 @@
 
 ## 已知取舍
 
-- 不做拍照/OCR，只做手动输入；拼写纠错和词形还原已覆盖常见输入问题。
+- 不做拍照/OCR；PDF 也只支持文字版，扫描件需要 OCR。手动输入仍保留。
 - 没有后端，所以“推送”是打开应用后的今日范文 + 首页提醒；真正锁屏推送需要额外的小后端（Web Push），当前未做。
 - 不设打分/打卡/复习队列；记忆曲线只用于内部选词，词靠每天范文自然复现。
 - 未配置 Key 时，现成范文只能覆盖部分生词；这是有意为之，避免硬编出不通顺的句子。
+- 不打包 APK/IPA；PWA 添加到主屏幕即可。若以后确实要安卓安装包，再用 Capacitor/TWA 单独做。

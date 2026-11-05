@@ -1,5 +1,5 @@
 'use strict';
-var CACHE = 'yanci-v4';
+var CACHE = 'yanci-v8';
 var ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,8 @@ var ASSETS = [
   './js/data/words.js',
   './js/data/essays.js',
   './js/data/roots.js',
+  './js/vendor/pdf.min.js',
+  './js/vendor/pdf.worker.min.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

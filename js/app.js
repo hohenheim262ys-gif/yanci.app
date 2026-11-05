@@ -41,7 +41,8 @@ var DEFAULTS = {
   key: '',
   model: 'deepseek-flash',
   theme: 'auto',
-  autoAdd: true
+  autoAdd: true,
+  pdfFilterStop: true
 };
 var settings = readJSON(LS.settings, {});
 Object.keys(DEFAULTS).forEach(function (k) {
@@ -52,7 +53,8 @@ var dailyHistory = readJSON(LS.history, []);
 var customCards = readJSON(LS.custom, {});
 var recent = readJSON(LS.recent, []);
 var daily = readJSON(LS.daily, null);
-var state = { view: 'today', essayTab: 'templates', bookSort: 'due', word: null };
+var state = { view: 'today', essayTab: 'templates', bookSort: 'due', word: null, pdf: null };
+var deferredPrompt = null;
 
 function readJSON(key, fallback) {
   try {
@@ -173,10 +175,15 @@ function copyText(text) {
 }
 
 /* ================= 生词本 / 记忆曲线 ================= */
-function ensureWord(w) {
+function ensureWord(w, meta) {
   if (!WORD_MAP.has(w)) return null;
   if (!book[w]) {
     book[w] = { addedAt: todayStr(), interval: 0, ease: 2.5, due: todayStr(), exposures: 0, lastShown: null };
+  }
+  if (meta && meta.source && !book[w].source) {
+    book[w].source = meta.source;
+    book[w].sourceName = meta.sourceName || '';
+    book[w].importedAt = meta.importedAt || todayStr();
   }
   return book[w];
 }
@@ -332,6 +339,7 @@ function openSheet(title, html, after) {
 function closeSheet() {
   var sheet = $('#sheet');
   if (!sheet) return;
+  if (state.pdf && state.pdf.parsing) state.pdf.cancelled = true;
   sheet.hidden = true;
   document.body.style.overflow = '';
   state.word = null;
@@ -1047,6 +1055,304 @@ function openRoot(i) {
   openSheet('词根 · ' + r.k, html);
 }
 
+/* ================= PDF 导入 ================= */
+var PDF_STOP = {};
+('a an the and or but if then than as at by for from in into of on onto out over to up with without within through during before after above below between among against about around under again further once here there when where why how all any both each few more most other some such only own same so too very can could may might must shall should will would do does did done have has had having be am is are was were been being i me my we our you your he him his she her it its they them their this that these those not no nor one two three four five').split(' ').forEach(function (w) { PDF_STOP[w] = 1; });
+var PDFJS_LOADING = null;
+
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (PDFJS_LOADING) return PDFJS_LOADING;
+  PDFJS_LOADING = new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = 'js/vendor/pdf.min.js';
+    s.onload = function () {
+      try {
+        if (!window.pdfjsLib) throw new Error('PDF.js 未加载');
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      } catch (e) { PDFJS_LOADING = null; reject(e); }
+    };
+    s.onerror = function () { PDFJS_LOADING = null; reject(new Error('PDF.js 加载失败，请检查网络后重试')); };
+    document.head.appendChild(s);
+  });
+  return PDFJS_LOADING;
+}
+
+function pdfIsFile(file) {
+  if (!file) return false;
+  return /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
+}
+
+function normalizePdfText(s) {
+  return String(s || '')
+    .replace(/\uFB00/g, 'ff').replace(/\uFB01/g, 'fi').replace(/\uFB02/g, 'fl')
+    .replace(/\uFB03/g, 'ffi').replace(/\uFB04/g, 'ffl').replace(/\uFB05/g, 'st').replace(/\uFB06/g, 'st')
+    .replace(/\u00AD/g, '')
+    .replace(/\u2019/g, "'")
+    .replace(/-\s*\n\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function pdfTokens(text) {
+  var normalized = normalizePdfText(text);
+  var arr = normalized.match(/[A-Za-z][A-Za-z'-]*/g) || [];
+  var out = [];
+  for (var i = 0; i < arr.length; i++) {
+    var raw = arr[i].toLowerCase().replace(/^['-]+|['-]+$/g, '');
+    if (raw.length < 2) continue;
+    if (raw.slice(-2) === "'s") raw = raw.slice(0, -2);
+    if (!raw) continue;
+    if (settings.pdfFilterStop !== false && PDF_STOP[raw]) continue;
+    out.push(raw);
+  }
+  return out;
+}
+
+function openPdfProgress(name) {
+  openSheet('PDF 导入', '<div class="pdf-progress"><div class="bar"><i id="pdfBar"></i></div><p id="pdfProgressText">准备解析…</p><div class="actions"><button type="button" class="btn ghost" id="pdfCancel">取消</button></div></div><div class="pdf-note">文件只在本地解析，不会上传。支持文字版 PDF；扫描件需要 OCR。最多处理前 200 页。</div>', function () {
+    var b = $('#pdfCancel');
+    if (b) b.addEventListener('click', function () {
+      if (state.pdf) state.pdf.cancelled = true;
+      closeSheet();
+      toast('已取消');
+    });
+  });
+}
+function updatePdfProgress(pct, text) {
+  var bar = $('#pdfBar');
+  var t = $('#pdfProgressText');
+  if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (t) t.textContent = text;
+}
+
+function parsePdfFile(file) {
+  if (!file) return;
+  if (!pdfIsFile(file)) { toast('请选择 PDF 文件'); return; }
+  if (file.size > 50 * 1024 * 1024) { toast('PDF 不能超过 50MB'); return; }
+  state.pdf = { name: file.name || 'PDF', cancelled: false, parsing: true, rows: [], stats: null, selected: {}, filter: 'new', q: '' };
+  openPdfProgress(file.name || 'PDF');
+  loadPdfJs().then(function (pdfjs) {
+    return file.arrayBuffer().then(function (buf) {
+      return pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, useWorkerFetch: false }).promise;
+    });
+  }).then(function (pdf) {
+    var pages = Math.min(pdf.numPages, 200);
+    var counts = {}, unknown = {}, total = 0;
+    var chain = Promise.resolve();
+    for (var i = 1; i <= pages; i++) {
+      (function (pageNo) {
+        chain = chain.then(function () {
+          if (!state.pdf || state.pdf.cancelled) throw new Error('CANCELLED');
+          return pdf.getPage(pageNo).then(function (page) { return page.getTextContent(); }).then(function (tc) {
+            var text = (tc.items || []).map(function (it) { return (it.str || '') + (it.hasEOL ? '\n' : ' '); }).join('');
+            var toks = pdfTokens(text);
+            for (var k = 0; k < toks.length; k++) {
+              var raw = toks[k];
+              total++;
+              var lemma = FORM_MAP.get(raw) || raw;
+              if (WORD_MAP.has(lemma)) counts[lemma] = (counts[lemma] || 0) + 1;
+              else unknown[raw] = (unknown[raw] || 0) + 1;
+            }
+            updatePdfProgress(pageNo / pages * 100, '正在解析第 ' + pageNo + ' / ' + pages + ' 页');
+            if (pageNo % 3 === 0) return new Promise(function (resolve) { setTimeout(resolve, 0); });
+          });
+        });
+      })(i);
+    }
+    return chain.then(function () {
+      if (!state.pdf || state.pdf.cancelled) throw new Error('CANCELLED');
+      var rows = [];
+      Object.keys(counts).forEach(function (w) {
+        var x = WORD_MAP.get(w);
+        rows.push({ w: w, n: counts[w], known: true, src: x.src, band: x.f && x.f.band, sense: senseText(x, 1), saved: !!book[w] });
+      });
+      Object.keys(unknown).forEach(function (w) {
+        rows.push({ w: w, n: unknown[w], known: false, src: '', band: '', sense: '词库未收录', saved: false });
+      });
+      rows.sort(function (a, b) { if (a.known !== b.known) return a.known ? -1 : 1; return b.n - a.n || a.w.localeCompare(b.w); });
+      if (!rows.length) {
+        state.pdf.parsing = false;
+        openSheet('PDF 导入', '<div class="empty"><b>没有提取到文字</b>这可能是扫描版/图片版 PDF，需要 OCR。当前只支持文字版 PDF；可以换一份文字版，或继续手动查词。</div><div class="actions"><button type="button" class="btn" data-close="1">关闭</button></div>');
+        return;
+      }
+      var known = rows.filter(function (r) { return r.known; });
+      var newRows = known.filter(function (r) { return !r.saved; });
+      state.pdf.rows = rows;
+      state.pdf.parsing = false;
+      state.pdf.stats = {
+        pages: pages,
+        total: total,
+        unique: rows.length,
+        syllabus: known.filter(function (r) { return r.src === '大纲'; }).length,
+        extra: known.filter(function (r) { return r.src === '扩展'; }).length,
+        unknown: rows.length - known.length,
+        saved: known.length - newRows.length
+      };
+      state.pdf.selected = {};
+      newRows.forEach(function (r) { state.pdf.selected[r.w] = 1; });
+      openPdfResult();
+    });
+  }).catch(function (e) {
+    var msg = e && e.message ? e.message : '解析失败';
+    if (msg === 'CANCELLED') { toast('已取消'); return; }
+    if (/password/i.test(msg)) msg = '这个 PDF 有密码，暂不支持。请先解除密码再导入。';
+    if (/Invalid PDF|InvalidPDF/i.test(msg)) msg = '文件不是有效的 PDF，或已经损坏。';
+    openSheet('PDF 导入失败', '<div class="empty"><b>没有导入成功</b>' + esc(msg) + '</div><div class="actions"><button type="button" class="btn" data-close="1">关闭</button></div>');
+  });
+}
+
+function pdfFilteredRows() {
+  var p = state.pdf;
+  if (!p) return [];
+  var q = (p.q || '').toLowerCase();
+  return p.rows.filter(function (r) {
+    if (p.filter === 'new' && !(r.known && !r.saved)) return false;
+    if (p.filter === 'saved' && !(r.known && r.saved)) return false;
+    if (p.filter === 'unknown' && r.known) return false;
+    if (p.filter === 'syllabus' && !(r.known && r.src === '大纲')) return false;
+    if (p.filter === 'extra' && !(r.known && r.src === '扩展')) return false;
+    if (q && (r.w + ' ' + (r.sense || '')).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+function pdfUpdateCount() {
+  var p = state.pdf;
+  if (!p) return;
+  var n = Object.keys(p.selected).filter(function (w) { return p.selected[w]; }).length;
+  var count = $('#pdfSelectedCount');
+  if (count) count.textContent = '已选 ' + n + ' 个';
+  var btn = $('#pdfImportBtn');
+  if (btn) { btn.textContent = '加入生词本（' + n + '）'; btn.disabled = n === 0; }
+}
+function renderPdfList() {
+  var p = state.pdf;
+  var box = $('#pdfList');
+  if (!p || !box) return;
+  var rows = pdfFilteredRows();
+  var html = '';
+  var shown = rows.slice(0, 300);
+  if (!shown.length) html = '<div class="empty" style="border:0;padding:20px 8px"><b>没有匹配的词</b>换个筛选或搜索词。</div>';
+  shown.forEach(function (r) {
+    var checked = p.selected[r.w] ? ' checked' : '';
+    var disabled = r.known && !r.saved ? '' : ' disabled';
+    var tag = !r.known ? '<span class="pdf-tag">未收录</span>' : (r.saved ? '<span class="pdf-tag saved">已在生词本</span>' : '<span class="pdf-tag">' + esc(r.src) + '</span>');
+    html += '<label class="pdf-row' + (r.known ? '' : ' unknown') + '">' +
+      '<input type="checkbox" data-pdf-word="' + esc(r.w) + '"' + checked + disabled + '>' +
+      '<div class="pdf-main"><div class="pdf-word"><b>' + esc(r.w) + '</b>' + tag +
+      (r.known ? '<span class="badge ' + bandClass(r.band) + '">' + esc(freqLabel(WORD_MAP.get(r.w))) + '</span>' : '') +
+      '</div><div class="pdf-zh">' + esc(r.sense || '') + '</div></div>' +
+      '<div class="pdf-count">' + r.n + ' 次</div></label>';
+  });
+  if (rows.length > 300) html += '<div class="pdf-note">只显示前 300 条；导入按当前筛选的已选词执行，不受 300 条限制。</div>';
+  box.innerHTML = html;
+  pdfUpdateCount();
+}
+function openPdfResult() {
+  var p = state.pdf;
+  if (!p || !p.stats) return;
+  var s = p.stats;
+  var html = '<div class="pdf-summary"><div class="pdf-sum"><b>' + s.pages + '</b><span>页</span></div><div class="pdf-sum"><b>' + s.unique + '</b><span>唯一词</span></div><div class="pdf-sum"><b>' + s.syllabus + '</b><span>大纲词</span></div><div class="pdf-sum"><b>' + s.extra + '</b><span>扩展词</span></div><div class="pdf-sum"><b>' + s.unknown + '</b><span>未收录</span></div><div class="pdf-sum"><b>' + s.saved + '</b><span>已在生词本</span></div></div>';
+  html += '<p class="pdf-note">共 ' + s.total + ' 个词次；默认只选“新词”。未收录词不能加入生词本。文件仅在本机解析。</p>';
+  html += '<div class="pdf-toolbar"><select id="pdfFilter" class="btn sm ghost" style="min-height:40px"><option value="new">只看新词</option><option value="all">全部</option><option value="syllabus">大纲词</option><option value="extra">扩展词</option><option value="saved">已在生词本</option><option value="unknown">未收录</option></select><div class="search-box"><input id="pdfSearch" type="search" placeholder="搜索单词/释义"></div></div>';
+  html += '<div class="row" style="margin:8px 0"><button type="button" class="btn sm ghost" data-pdf-action="all">全选</button><button type="button" class="btn sm ghost" data-pdf-action="none">清空</button><button type="button" class="btn sm ghost" data-pdf-action="new">仅新词</button><span class="freq-note" id="pdfSelectedCount"></span></div>';
+  html += '<div class="pdf-list" id="pdfList"></div>';
+  html += '<div class="pdf-actions"><button type="button" class="btn primary" id="pdfImportBtn" disabled>加入生词本（0）</button><button type="button" class="btn ghost" id="pdfCloseBtn">关闭</button></div>';
+  openSheet('PDF 导入 · ' + (p.name || ''), html, function () {
+    var filter = $('#pdfFilter');
+    var search = $('#pdfSearch');
+    if (filter) filter.addEventListener('change', function () { state.pdf.filter = filter.value; renderPdfList(); });
+    if (search) search.addEventListener('input', function () { state.pdf.q = search.value; renderPdfList(); });
+    var list = $('#pdfList');
+    if (list) list.addEventListener('change', function (ev) {
+      var cb = ev.target.closest('[data-pdf-word]');
+      if (!cb) return;
+      var w = cb.getAttribute('data-pdf-word');
+      if (cb.checked) state.pdf.selected[w] = 1; else delete state.pdf.selected[w];
+      pdfUpdateCount();
+    });
+    $$('#sheetBody [data-pdf-action]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var act = b.getAttribute('data-pdf-action');
+        var rows = pdfFilteredRows();
+        if (act === 'none') state.pdf.selected = {};
+        if (act === 'all') rows.forEach(function (r) { if (r.known && !r.saved) state.pdf.selected[r.w] = 1; });
+        if (act === 'new') {
+          state.pdf.selected = {};
+          rows.forEach(function (r) { if (r.known && !r.saved) state.pdf.selected[r.w] = 1; });
+        }
+        renderPdfList();
+      });
+    });
+    var imp = $('#pdfImportBtn');
+    if (imp) imp.addEventListener('click', importPdfSelected);
+    var close = $('#pdfCloseBtn');
+    if (close) close.addEventListener('click', function () { state.pdf = null; closeSheet(); });
+    renderPdfList();
+  });
+}
+function importPdfSelected() {
+  var p = state.pdf;
+  if (!p) return;
+  var imported = 0, skipped = 0, unknown = 0;
+  Object.keys(p.selected).forEach(function (w) {
+    if (!p.selected[w]) return;
+    var x = WORD_MAP.get(w);
+    if (!x) { unknown++; return; }
+    if (book[w]) { skipped++; return; }
+    ensureWord(w, { source: 'pdf', sourceName: p.name, importedAt: todayStr() });
+    imported++;
+  });
+  saveBook();
+  state.pdf = null;
+  closeSheet();
+  renderBook();
+  renderToday();
+  toast('导入 ' + imported + ' 个' + (skipped ? '，跳过已在生词本 ' + skipped + ' 个' : '') + (unknown ? '，未收录 ' + unknown + ' 个' : ''));
+}
+
+/* ================= 安装到手机 ================= */
+function isStandalone() {
+  try { if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true; } catch (e) {}
+  return window.navigator.standalone === true;
+}
+function isIOSDevice() {
+  var ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function isWeChat() { return /MicroMessenger/i.test(navigator.userAgent || ''); }
+function openInstallGuide() {
+  var ios = isIOSDevice();
+  var android = /Android/i.test(navigator.userAgent || '');
+  var wx = isWeChat();
+  var html = '<div class="install-hero"><span class="brand-mark" aria-hidden="true">研</span><div><h3>把研词放到手机主屏</h3><p>它是可安装网页（PWA），不是应用商店 App；不用下载安装包。</p></div></div>';
+  if (wx) {
+    html += '<span class="install-platform">微信内置浏览器</span><ol class="install-steps"><li>点右上角 <b>…</b></li><li>选择 <b>在浏览器打开</b></li><li>再用下面的 iPhone / Android 步骤安装</li></ol><div class="install-note">微信里直接“添加到桌面”通常不可用，必须换到系统浏览器。</div>';
+  } else if (ios) {
+    html += '<span class="install-platform">iPhone / iPad · Safari</span><ol class="install-steps"><li>确认当前是 <b>Safari</b> 打开本页</li><li>点底部 <b>分享</b> 按钮（方框向上箭头）</li><li>向下找 <b>添加到主屏幕</b> → 添加</li><li>回到桌面，点“研词”图标即可全屏使用</li></ol><div class="install-note">iOS 不提供“下载 App”按钮；PWA 安装就是“添加到主屏幕”。用 Chrome/微信打开时不会出现这个选项。</div>';
+  } else if (android) {
+    html += '<span class="install-platform">Android · Chrome / Edge</span><ol class="install-steps"><li>点浏览器右上角 <b>⋮</b> 菜单</li><li>选择 <b>安装应用</b> 或 <b>添加到主屏幕</b></li><li>确认安装，桌面会出现“研词”图标</li></ol><div class="install-note">部分浏览器会直接弹出安装提示；没有提示就用菜单里的“添加到主屏幕”。</div>';
+  } else {
+    html += '<span class="install-platform">桌面 / 其他浏览器</span><ol class="install-steps"><li>打开浏览器菜单</li><li>找 <b>安装应用</b> 或 <b>添加到主屏幕</b></li><li>手机上建议用 Safari 或 Chrome 打开</li></ol>';
+  }
+  if (deferredPrompt) html += '<div class="actions"><button type="button" class="btn primary" id="installNowBtn">立即安装</button></div>';
+  html += '<div class="install-note">安装后离线可用；数据仍然只存在这台设备，换机请先在设置里导出备份。</div>';
+  openSheet('安装到手机', html, function () {
+    var b = $('#installNowBtn');
+    if (b) b.addEventListener('click', function () {
+      if (deferredPrompt) {
+        try {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then(function () { deferredPrompt = null; var ib = $('#installBtn'); if (ib) ib.hidden = true; }).catch(function () { deferredPrompt = null; });
+          return;
+        } catch (e) { deferredPrompt = null; }
+      }
+      openInstallGuide();
+    });
+  });
+}
+
 /* ================= 生词本 ================= */
 function renderBook() {
   var box = $('#bookList');
@@ -1086,11 +1392,14 @@ function renderSettings() {
   html += '<div class="setting-card"><h3>学习计划</h3><p>每天从生词本选几个词，编进一篇范文。没有打卡，也没有打分。</p>';
   html += '<div class="setting-row"><label>考试日期<small>用于倒计时，可改</small></label><input type="date" id="setExamDate" value="' + esc(settings.examDate) + '"></div>';
   html += '<div class="setting-row"><label>查词自动加入生词本<small>关掉后需要手动点「加入生词本」</small></label><label class="switch"><input type="checkbox" id="setAutoAdd"' + (settings.autoAdd !== false ? ' checked' : '') + '><i></i></label></div>';
+  html += '<div class="setting-row"><label>PDF 过滤常见虚词<small>默认过滤 the/and/of；关掉会显示这些词</small></label><label class="switch"><input type="checkbox" id="setPdfStop"' + (settings.pdfFilterStop !== false ? ' checked' : '') + '><i></i></label></div>';
   html += '<div class="setting-row"><label>每天选词数<small>建议 3–5 个，范文才不会太挤</small></label><select id="setDailyCount"><option value="3"' + (Number(settings.dailyCount) === 3 ? ' selected' : '') + '>3 个</option><option value="4"' + (Number(settings.dailyCount) === 4 ? ' selected' : '') + '>4 个</option><option value="5"' + (Number(settings.dailyCount) === 5 ? ' selected' : '') + '>5 个</option></select></div>';
   html += '<div class="setting-row"><label>默认作文<small>每天打开时优先生成哪一篇</small></label><select id="setDailyPart"><option value="B"' + (settings.dailyPart === 'B' ? ' selected' : '') + '>Part B 大作文</option><option value="A"' + (settings.dailyPart === 'A' ? ' selected' : '') + '>Part A 小作文</option></select></div>';
   html += '<div class="setting-row"><label>深色模式<small>跟随系统 / 强制浅色 / 强制深色</small></label><select id="setTheme"><option value="auto"' + (settings.theme === 'auto' ? ' selected' : '') + '>跟随系统</option><option value="light"' + (settings.theme === 'light' ? ' selected' : '') + '>浅色</option><option value="dark"' + (settings.theme === 'dark' ? ' selected' : '') + '>深色</option></select></div>';
   html += '</div>';
 
+  html += '<div class="setting-card"><h3>PDF 导入</h3><p>从文字版 PDF 提取英文单词，筛选后加入生词本。文件只在本机解析，不上传。</p><div class="row"><button type="button" class="btn sm" id="settingsPdfBtn">选择 PDF</button></div><div class="freq-note" style="margin-top:6px">扫描版/图片版 PDF 需要 OCR，当前不支持。</div></div>';
+  html += '<div class="setting-card"><h3>安装到手机</h3><p>这是可安装网页（PWA），不是应用商店 App。iPhone 用 Safari 分享→添加到主屏幕；Android 用 Chrome 菜单→安装应用。</p><div class="row"><button type="button" class="btn sm ghost" id="installGuideBtn">查看安装步骤</button></div></div>';
   html += '<div class="setting-card"><h3>AI 范文（可选）</h3><p>不填 Key 也能用：会用 IKTNF 的 49 篇现成范文匹配你的生词。填了 Key，就能按你的生词生成专属范文。</p>';
   html += '<div class="setting-row"><label>DeepSeek API Key<small>只保存在本机，不会上传到别处</small></label><input type="password" id="setKey" value="' + esc(settings.key) + '" placeholder="sk-..." autocomplete="off"></div>';
   html += '<div class="setting-row"><label>模型<small>默认 deepseek-flash</small></label><select id="setModel"><option value="deepseek-flash"' + (settings.model === 'deepseek-flash' ? ' selected' : '') + '>deepseek-flash</option><option value="deepseek-v4-pro"' + (settings.model === 'deepseek-v4-pro' ? ' selected' : '') + '>deepseek-v4-pro</option></select></div>';
@@ -1112,6 +1421,9 @@ function renderSettings() {
 
   $('#setExamDate').addEventListener('change', function (e) { settings.examDate = e.target.value || DEFAULTS.examDate; saveSettings(); updateExamPill(); });
   $('#setAutoAdd').addEventListener('change', function (e) { settings.autoAdd = !!e.target.checked; saveSettings(); });
+  $('#setPdfStop').addEventListener('change', function (e) { settings.pdfFilterStop = !!e.target.checked; saveSettings(); });
+  if ($('#installGuideBtn')) $('#installGuideBtn').addEventListener('click', openInstallGuide);
+  if ($('#settingsPdfBtn')) $('#settingsPdfBtn').addEventListener('click', function () { var f = $('#pdfFile'); if (f) { f.value = ''; f.click(); } });
   $('#setDailyCount').addEventListener('change', function (e) { settings.dailyCount = Number(e.target.value) || 4; saveSettings(); });
   $('#setDailyPart').addEventListener('change', function (e) { settings.dailyPart = e.target.value === 'A' ? 'A' : 'B'; saveSettings(); daily = null; saveDaily(); });
   $('#setTheme').addEventListener('change', function (e) { settings.theme = e.target.value; saveSettings(); applyTheme(); });
@@ -1134,7 +1446,7 @@ function exportData() {
     version: 1,
     exportedAt: new Date().toISOString(),
     book: book,
-    settings: { examDate: settings.examDate, dailyCount: settings.dailyCount, dailyPart: settings.dailyPart, model: settings.model, theme: settings.theme, autoAdd: settings.autoAdd !== false },
+    settings: { examDate: settings.examDate, dailyCount: settings.dailyCount, dailyPart: settings.dailyPart, model: settings.model, theme: settings.theme, autoAdd: settings.autoAdd !== false, pdfFilterStop: settings.pdfFilterStop !== false },
     history: dailyHistory.slice(0, 30),
     customCards: customCards,
     daily: daily
@@ -1170,6 +1482,7 @@ function importData(ev) {
         settings.model = d.settings.model || settings.model;
         settings.theme = d.settings.theme || settings.theme;
         settings.autoAdd = d.settings.autoAdd !== false;
+        settings.pdfFilterStop = d.settings.pdfFilterStop !== false;
       }
       saveBook(); saveHistory(); saveCustom(); saveDaily(); saveSettings();
       applyTheme(); renderToday(); renderBook(); renderSettings();
@@ -1195,16 +1508,30 @@ function initPWA() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW', e); });
   }
-  var deferred = null;
-  window.addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault(); deferred = e;
-    var b = $('#installBtn'); if (b) b.hidden = false;
-  });
   var ib = $('#installBtn');
+  if (ib && !isStandalone()) ib.hidden = false;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (ib) ib.hidden = false;
+  });
   if (ib) ib.addEventListener('click', function () {
-    if (!deferred) { toast('请用浏览器菜单里的“添加到主屏幕”'); return; }
-    deferred.prompt();
-    deferred.userChoice.then(function () { ib.hidden = true; deferred = null; });
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function () {
+          deferredPrompt = null;
+          ib.hidden = true;
+        }).catch(function () { deferredPrompt = null; });
+        return;
+      } catch (e) { deferredPrompt = null; }
+    }
+    openInstallGuide();
+  });
+  window.addEventListener('appinstalled', function () {
+    deferredPrompt = null;
+    if (ib) ib.hidden = true;
+    toast('已安装到主屏');
   });
 }
 function init() {
@@ -1215,6 +1542,18 @@ function init() {
   $$('.tabbar button').forEach(function (b) {
     b.addEventListener('click', function () { showView(b.getAttribute('data-view')); });
   });
+  var pdfBtn = $('#bookPdfImport');
+  var pdfInput = $('#pdfFile');
+  if (pdfBtn && pdfInput) {
+    pdfBtn.addEventListener('click', function () { pdfInput.value = ''; pdfInput.click(); });
+  }
+  if (pdfInput) {
+    pdfInput.addEventListener('change', function () {
+      var f = pdfInput.files && pdfInput.files[0];
+      pdfInput.value = '';
+      if (f) parsePdfFile(f);
+    });
+  }
   var themeBtn = $('#themeBtn');
   if (themeBtn) themeBtn.addEventListener('click', function () {
     settings.theme = settings.theme === 'auto' ? 'light' : (settings.theme === 'light' ? 'dark' : 'auto');

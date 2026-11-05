@@ -89,8 +89,12 @@
         <p class="eyebrow">生词本</p>
         <h2 id="bookTitle">积累的词</h2>
       </div>
-      <button type="button" class="btn ghost sm" id="bookExport">导出</button>
+      <div class="row">
+        <button type="button" class="btn ghost sm" id="bookPdfImport">PDF 导入</button>
+        <button type="button" class="btn ghost sm" id="bookExport">导出</button>
+      </div>
     </div>
+    <input type="file" id="pdfFile" accept="application/pdf,.pdf" hidden>
     <div id="bookStats" class="stats-row"></div>
     <div class="seg sm" id="bookSort" role="tablist">
       <button type="button" class="on" data-sort="due">待复现</button>

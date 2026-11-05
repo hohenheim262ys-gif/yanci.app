@@ -1,5 +1,5 @@
 data-src/
-.chrome-test*/
+.chrome-*/
 tests/screenshot-*.png
 nul
 .DS_Store
