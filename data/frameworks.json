@@ -1,0 +1,305 @@
+{
+  "meta": {
+    "version": 1,
+    "note": "考研英语一大作文三段式框架；___ 为可替换空位。"
+  },
+  "frameworks": [
+    {
+      "id": "picture",
+      "title": "图画描述型",
+      "subtitle": "首段描述图画 + 主体分析原因/影响 + 结尾建议升华",
+      "type": "B",
+      "use": "英语一图画作文最常用",
+      "paragraphs": [
+        {
+          "role": "描述",
+          "goal": "用 2–3 句描述画面，点出寓意，不要逐笔翻译。",
+          "frames": [
+            {
+              "en": "As is vividly depicted in the picture, ___.",
+              "zh": "正如图画生动展示的那样，___。",
+              "slot": "画面主体",
+              "note": "首句常用 As is vividly depicted in the picture；不要写成 I can see。"
+            },
+            {
+              "en": "The drawing presents a thought-provoking scene in which ___.",
+              "zh": "这幅画呈现了一个发人深省的场景：___。",
+              "slot": "人物/动作",
+              "note": "in which 后接完整场景，适合写人物在做什么。"
+            },
+            {
+              "en": "Simple as the image is, it conveys a profound message: ___.",
+              "zh": "画面虽然简单，却传达了一个深刻的道理：___。",
+              "slot": "寓意",
+              "note": "Simple as ... 是倒装让步，阅卷老师熟悉且安全。"
+            },
+            {
+              "en": "What catches our attention most is that ___.",
+              "zh": "最引人注意的是，___。",
+              "slot": "细节/对比",
+              "note": "用于强调画面中的反差或关键细节。"
+            }
+          ]
+        },
+        {
+          "role": "分析",
+          "goal": "用 3–4 句分析原因、影响或后果，层次要清楚。",
+          "frames": [
+            {
+              "en": "Several factors may account for this phenomenon. To begin with, ___.",
+              "zh": "这一现象可能由几个因素造成。首先，___。",
+              "slot": "原因一",
+              "note": "原因段开头；To begin with 比 first 更书面。"
+            },
+            {
+              "en": "In addition, ___ plays an indispensable role in ___.",
+              "zh": "此外，___ 在 ___ 中起着不可或缺的作用。",
+              "slot": "原因二",
+              "note": "play an indispensable role in 是高频搭配。"
+            },
+            {
+              "en": "More importantly, ___.",
+              "zh": "更重要的是，___。",
+              "slot": "原因三/递进",
+              "note": "用于把论证推进一层，后面接完整句子。"
+            },
+            {
+              "en": "As a consequence, ___.",
+              "zh": "其结果是，___。",
+              "slot": "影响/后果",
+              "note": "从原因转到影响；不要与 as a result 重复使用。"
+            }
+          ]
+        },
+        {
+          "role": "建议",
+          "goal": "用 2–3 句提出建议或升华，避免空喊口号。",
+          "frames": [
+            {
+              "en": "In view of the situation, it is high time that we ___.",
+              "zh": "鉴于这种情况，我们早该 ___。",
+              "slot": "建议动作",
+              "note": "It is high time that 后接过去式或 should + 动词原形。"
+            },
+            {
+              "en": "Only by ___ can we ___.",
+              "zh": "只有通过 ___，我们才能 ___。",
+              "slot": "手段/结果",
+              "note": "Only by 置于句首时主句倒装，是安全的高分句式。"
+            },
+            {
+              "en": "Therefore, both individuals and society should ___.",
+              "zh": "因此，个人和社会都应该 ___。",
+              "slot": "双向建议",
+              "note": "适合结尾段，体现主体多元。"
+            },
+            {
+              "en": "It is hoped that ___.",
+              "zh": "希望 ___。",
+              "slot": "展望",
+              "note": "语气温和，适合结尾最后一句。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chart",
+      "title": "图表数据型",
+      "subtitle": "首段描述趋势/对比 + 主体分析原因 + 结尾预测/建议",
+      "type": "B",
+      "use": "图表作文、英语二也适用",
+      "paragraphs": [
+        {
+          "role": "描述",
+          "goal": "用 2–3 句概括图表的主趋势和关键对比，不要罗列所有数字。",
+          "frames": [
+            {
+              "en": "The chart above clearly illustrates the changes in ___ over the period from ___ to ___.",
+              "zh": "上图清楚展示了 ___ 在 ___ 到 ___ 期间的变化。",
+              "slot": "指标/时间",
+              "note": "首句交代图表主题和时间范围。"
+            },
+            {
+              "en": "As can be seen, ___ rose steadily from ___ to ___.",
+              "zh": "可以看出，___ 从 ___ 稳步上升到 ___。",
+              "slot": "上升数据",
+              "note": "rose steadily / increased markedly / climbed sharply 可替换。"
+            },
+            {
+              "en": "In contrast, ___ witnessed a marked decline.",
+              "zh": "相比之下，___ 出现了明显下降。",
+              "slot": "下降数据",
+              "note": "witnessed a marked decline 比 decreased 更正式。"
+            },
+            {
+              "en": "Overall, the figures reveal a striking trend: ___.",
+              "zh": "总体来看，这些数据揭示了一个显著趋势：___。",
+              "slot": "总体趋势",
+              "note": "用 Overall 收束首段，不要在这里分析原因。"
+            }
+          ]
+        },
+        {
+          "role": "分析",
+          "goal": "用 3 句解释趋势背后的原因，至少两个角度。",
+          "frames": [
+            {
+              "en": "What lies behind the trend? Several factors deserve attention.",
+              "zh": "这一趋势背后是什么？有几个因素值得关注。",
+              "slot": "过渡",
+              "note": "设问句过渡，考场上容易展开。"
+            },
+            {
+              "en": "First and foremost, ___.",
+              "zh": "首先，___。",
+              "slot": "原因一",
+              "note": "原因段第一层；后面接完整句。"
+            },
+            {
+              "en": "Moreover, ___.",
+              "zh": "此外，___。",
+              "slot": "原因二",
+              "note": "递进一层，避免与 first 重复。"
+            },
+            {
+              "en": "Last but not least, ___.",
+              "zh": "最后同样重要的是，___。",
+              "slot": "原因三",
+              "note": "三层原因时使用；时间紧可省略。"
+            }
+          ]
+        },
+        {
+          "role": "建议",
+          "goal": "用 2–3 句预测或提出措施，措施要具体。",
+          "frames": [
+            {
+              "en": "In light of the analysis, it is reasonable to predict that ___.",
+              "zh": "根据上述分析，可以合理预测 ___。",
+              "slot": "预测",
+              "note": "In light of 比 according to 更书面。"
+            },
+            {
+              "en": "To reverse the undesirable trend, effective measures should be taken.",
+              "zh": "为扭转这一不良趋势，应采取有效措施。",
+              "slot": "措施总起",
+              "note": "只用于负面趋势；正面趋势改用 To maintain the momentum。"
+            },
+            {
+              "en": "For one thing, ___; for another, ___.",
+              "zh": "一方面，___；另一方面，___。",
+              "slot": "两条措施",
+              "note": "两条措施即可，不要写太长。"
+            },
+            {
+              "en": "Only in this way can ___.",
+              "zh": "只有这样，才能 ___。",
+              "slot": "结论",
+              "note": "Only in this way 置于句首，主句倒装。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "argument",
+      "title": "观点品质型",
+      "subtitle": "首段引出观点 + 主体举例/对比/因果 + 结尾总结",
+      "type": "B",
+      "use": "品质、社会现象、名言警句类",
+      "paragraphs": [
+        {
+          "role": "引出",
+          "goal": "用 2 句引出话题和观点，避免模板化开头。",
+          "frames": [
+            {
+              "en": "There is a growing awareness that ___.",
+              "zh": "人们越来越意识到 ___。",
+              "slot": "观点",
+              "note": "适合社会现象类开头。"
+            },
+            {
+              "en": "The saying that ___ best illustrates the importance of ___.",
+              "zh": "___ 这句话最好地说明了 ___ 的重要性。",
+              "slot": "名言/主题",
+              "note": "名言类作文开头；没有名言时改用第一句。"
+            },
+            {
+              "en": "In contemporary society, ___ has aroused widespread concern.",
+              "zh": "在当代社会，___ 引起了广泛关注。",
+              "slot": "现象",
+              "note": "现象类万能开头，但后面必须具体化。"
+            },
+            {
+              "en": "From my perspective, ___.",
+              "zh": "在我看来，___。",
+              "slot": "中心论点",
+              "note": "明确立场，后文围绕它展开。"
+            }
+          ]
+        },
+        {
+          "role": "论证",
+          "goal": "用 3–4 句举例、对比或因果论证，例子要具体。",
+          "frames": [
+            {
+              "en": "To begin with, ___.",
+              "zh": "首先，___。",
+              "slot": "论点一",
+              "note": "分论点 + 一句解释，不要只喊口号。"
+            },
+            {
+              "en": "A case in point is ___.",
+              "zh": "一个恰当的例子是 ___。",
+              "slot": "例子",
+              "note": "例子可以虚构但需合理，不要编具体统计数字。"
+            },
+            {
+              "en": "In addition, ___.",
+              "zh": "此外，___。",
+              "slot": "论点二",
+              "note": "第二层论证；可用对比：those who ... while those who ..."
+            },
+            {
+              "en": "Therefore, ___.",
+              "zh": "因此，___。",
+              "slot": "小结",
+              "note": "把论证收束回中心论点。"
+            }
+          ]
+        },
+        {
+          "role": "总结",
+          "goal": "用 2–3 句总结并升华，呼应首段。",
+          "frames": [
+            {
+              "en": "In conclusion, ___.",
+              "zh": "总之，___。",
+              "slot": "总结",
+              "note": "结尾段标志；不要引入新论点。"
+            },
+            {
+              "en": "It is high time that we ___.",
+              "zh": "我们早该 ___。",
+              "slot": "行动",
+              "note": "注意虚拟语气：过去式或 should + 原形。"
+            },
+            {
+              "en": "Only by ___ can we ___.",
+              "zh": "只有通过 ___，我们才能 ___。",
+              "slot": "条件/结果",
+              "note": "倒装句，适合最后一句。"
+            },
+            {
+              "en": "As long as ___, we will be able to ___.",
+              "zh": "只要 ___，我们就能 ___。",
+              "slot": "展望",
+              "note": "语气积极，适合品质类结尾。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
